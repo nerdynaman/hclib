@@ -4,8 +4,8 @@ SUBDIRS =
 INCLUDES_DIR = -I$(top_srcdir)/inc -I$(top_srcdir)/src/inc
 
 # cflags: important to define that otherwise we inherit default values too
-CFLAGS = -Wall -g -O3 -std=c11  -Wno-implicit-function-declaration
-CXXFLAGS = -Wall -g -O3 -std=c++11 -Wno-implicit-function-declaration
+CFLAGS = -Wall -g -O3 -std=c11  
+CXXFLAGS = -Wall -g -O3 -std=c++11 
 LDFLAGS = -lpthread
 
 # build the hclib library

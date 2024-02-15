@@ -117,3 +117,17 @@ void *dequePop(deque_t *deq)
     deq->tail = deq->head;
     return rt;
 }
+
+int dequeStealMailbox(hclib_worker_state *ws, int thief_id)
+{
+    // make sure further reads are not reordered before the read of ws->mailbox_size
+    // hc_mfence();
+    // use atomic compare and swap to change the value of ws->thief_id
+    // if victim doesnt have any task to steal from deque, return 0
+    if (hc_cas(&ws->thief_id, -1, thief_id))
+    {
+        return 1;
+    }
+    // hc_mfence();
+    return 0;
+}
