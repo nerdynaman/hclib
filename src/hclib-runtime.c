@@ -69,6 +69,9 @@ void setup()
         workers[i].deque = malloc(sizeof(deque_t));
         void *val = NULL;
         dequeInit(workers[i].deque, val);
+        linkedList_t *ll = malloc(sizeof(linkedList_t));
+        linkedListInit(ll);
+        workers[i].privDeque = ll;
         workers[i].current_finish = NULL;
         workers[i].id = i;
     }
@@ -125,7 +128,28 @@ void spawn(task_t *task)
     check_in_finish(ws->current_finish);
     task->current_finish = ws->current_finish;
     // push on worker deq
-    dequePush(ws->deque, task);
+    // dequePush(ws->deque, task);
+    /*
+    check if main deque is empty, if yes then push on main deque
+    */
+   if (ws->deque->tail - ws->deque->head == 0)
+    {
+        void* data = NULL;
+        data = linkedListPopHead(ws->privDeque);
+        if (data != NULL)
+        {
+            dequePush(ws->deque, data);
+        }
+        else
+        {
+            dequePush(ws->deque, task);
+        }
+    }
+    else
+    {
+        linkedListPush(ws->privDeque, task);
+    }
+    // linkedListPush(ws->privDeque, task);
     ws->total_push++;
 }
 
@@ -144,7 +168,23 @@ void slave_worker_finishHelper_routine(finish_t *finish)
     int wid = hclib_current_worker();
     while (finish->counter > 0)
     {
-        task_t *task = dequePop(workers[wid].deque);
+        task_t *task = linkedListPopTail(workers[wid].privDeque);
+        if (task == NULL)
+        {
+            task = dequePop(workers[wid].deque);
+        }
+         else
+        {
+            if (workers[wid].deque->tail - workers[wid].deque->head == 0)
+            {
+                int s = workers[wid].privDeque->size;
+                for (int i = 0; i < s/2; i++)
+                {
+                    printf("Stealing from private deque %d\n",i);
+                    dequePush(workers[wid].deque, linkedListPopHead(workers[wid].privDeque));
+                }
+            }
+        }
         if (!task)
         {
             // try to steal
@@ -234,7 +274,24 @@ void *worker_routine(void *args)
     set_current_worker(wid);
     while (not_done)
     {
-        task_t *task = dequePop(workers[wid].deque);
+        // task_t *task = dequePop(workers[wid].deque);
+        task_t *task = linkedListPopTail(workers[wid].privDeque);
+        if (task == NULL)
+        {
+            task = dequePop(workers[wid].deque);
+        }
+         else
+        {
+            if (workers[wid].deque->tail - workers[wid].deque->head == 0)
+            {
+                int s = workers[wid].privDeque->size;
+                for (int i = 0; i < s/2; i++)
+                {
+                    printf("Stealing from private deque\n");
+                    dequePush(workers[wid].deque, linkedListPopHead(workers[wid].privDeque));
+                }
+            }
+        }
         if (!task)
         {
             // try to steal

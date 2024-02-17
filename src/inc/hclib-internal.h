@@ -22,6 +22,7 @@
 
 #include "hclib.h"
 #include "hclib-deque.h"
+#include "hclib-linkedList.h"
 #include "hclib-atomics.h"
 
 typedef struct finish_t {
@@ -36,4 +37,5 @@ typedef struct hclib_worker_state {
     int id; // The id, identify a worker
     long total_push;
     long total_steals;
+    linkedList_t *privDeque;
 } hclib_worker_state;
