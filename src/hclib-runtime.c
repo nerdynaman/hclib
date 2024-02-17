@@ -139,6 +139,7 @@ void spawn(task_t *task)
         if (data != NULL)
         {
             dequePush(ws->deque, data);
+            linkedListPush(ws->privDeque, task);
         }
         else
         {
