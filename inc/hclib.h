@@ -13,6 +13,7 @@ typedef struct task_t {
     void *args;
     generic_frame_ptr _fp;
     struct finish_t* current_finish;
+    int id;
 } task_t;
 
 /**
@@ -29,6 +30,8 @@ void end_finish();
 int hclib_num_workers();
 void hclib_init(int argc, char **argv);
 void hclib_finalize();
+void hclib_start_tracing();
+void hclib_stop_tracing();
 #ifdef __cplusplus
 }
 #endif

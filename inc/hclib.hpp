@@ -43,6 +43,8 @@ inline void kernel(T &&lambda) {
 
 void init(int argc, char ** argv);
 void finalize();
+void start_tracing();
+void stop_tracing();
 int current_worker();
 int num_workers();
 }

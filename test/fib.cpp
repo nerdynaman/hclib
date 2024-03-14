@@ -42,13 +42,19 @@ int fib(int n)
 
 int main (int argc, char ** argv) {
     hclib::init(argc, argv);
-    int n = 25, res;
+    int n = 15, res;
     if(argc > 1) n = atoi(argv[1]);
     if(argc > 2) threshold = atoi(argv[2]);
 
     printf("Starting Fib(%d)..\n",n);
     hclib::kernel([&]() {
-      res = fib(n);
+        for (int i = 0; i < 4; i++)
+        {
+            hclib::start_tracing();
+            res = fib(n);
+            printf("Fib(%d) = %d\n",n,res);
+            hclib::stop_tracing();
+        }
     });
     printf("Fib(%d) = %d\n",n,res);
     hclib::finalize();

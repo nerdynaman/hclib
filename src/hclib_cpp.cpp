@@ -35,3 +35,13 @@ void hclib::finalize()
 {
   hclib_finalize();
 }
+
+void hclib::start_tracing()
+{
+  hclib_start_tracing();
+}
+
+void hclib::stop_tracing()
+{
+  hclib_stop_tracing();
+}

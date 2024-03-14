@@ -25,6 +25,9 @@ int nb_workers;
 int not_done;
 static double user_specified_timer = 0;
 static double benchmark_start_time_stats = 0;
+int tracing_enabled = 0;
+int replay_enabled = 0;
+workerState *workerStateArr; //array which will store the state of each worker
 
 double mysecond()
 {
@@ -64,6 +67,9 @@ void setup()
     not_done = 1;
     pthread_once(&selfKeyInitialized, initializeKey);
     workers = (hclib_worker_state *)malloc(sizeof(hclib_worker_state) * nb_workers);
+    // initialize worker state array
+    workerStateArr = (workerState *)malloc(sizeof(workerState) * nb_workers);
+
     for (int i = 0; i < nb_workers; i++)
     {
         workers[i].deque = malloc(sizeof(deque_t));
@@ -101,7 +107,7 @@ void hclib_init(int argc, char **argv)
     printf("---------HCLIB_RUNTIME_INFO-----------\n");
     printf(">>> HCLIB_WORKERS\t= %s\n", getenv("HCLIB_WORKERS"));
     printf("----------------------------------------\n");
-    nb_workers = (getenv("HCLIB_WORKERS") != NULL) ? atoi(getenv("HCLIB_WORKERS")) : 1;
+    nb_workers = (getenv("HCLIB_WORKERS") != NULL) ? atoi(getenv("HCLIB_WORKERS")) : 2;
     setup();
     benchmark_start_time_stats = mysecond();
 }
@@ -135,17 +141,45 @@ void hclib_async(generic_frame_ptr fct_ptr, void *arg)
     *task = (task_t){
         ._fp = fct_ptr,
         .args = arg,
+        // adding a unique id to the task whenever async(task) is created
+        .id = workerStateArr[hclib_current_worker()].asynCounter,
     };
+
+    // printf("new task created with id as %d by worker %d with existing asynCounter as %d\n", task->id, hclib_current_worker(), workerStateArr[hclib_current_worker()].asynCounter);
+    workerStateArr[hclib_current_worker()].asynCounter+=1;
+    if (replay_enabled)
+    {
+        // send to theif if was earlier stolen
+        // check if the task was stolen
+        stolenTaskList *stlCurr = workerStateArr[hclib_current_worker()].stl;
+        // printf("New async task %d is being created\n", task->id);
+        while (stlCurr != NULL)
+        {
+            // printf("Checking against %d\n", stlCurr->task->taskID);
+            if (stlCurr->task->taskID == task->id)
+            {
+                // printf("Task %d was stolen and now will be executed by worker %d\n", task->id, stlCurr->task->workExecutor);
+                // send to theif
+                int wid = hclib_current_worker();
+                hclib_worker_state* ws = &workers[wid];
+                check_in_finish(ws->current_finish);
+                task->current_finish = ws->current_finish;
+                workerStateArr[stlCurr->task->workExecutor].stolenTasks[stlCurr->task->stealCounter] = *task;
+                return;
+            }
+            stlCurr = stlCurr->next;
+        }
+    }
     spawn(task);
 }
 
 void slave_worker_finishHelper_routine(finish_t *finish)
 {
     int wid = hclib_current_worker();
-    while (finish->counter > 0)
+    while (finish->counter > 0 )
     {
         task_t *task = dequePop(workers[wid].deque);
-        if (!task)
+        if (!task && !replay_enabled)
         {
             // try to steal
             int i = 1;
@@ -154,12 +188,53 @@ void slave_worker_finishHelper_routine(finish_t *finish)
                 task = dequeSteal(workers[(wid + i) % (nb_workers)].deque);
                 if (task)
                 {
+                    printf("Worker %d stole task %d from worker %d\n", wid, task->id, (wid + i) % (nb_workers));
                     workers[wid].total_steals++;
+                    // now we have a stealed task, we need to add this to the list of stolen tasks
+                    stolenTask *st = (stolenTask *)malloc(sizeof(stolenTask));
+                    st->workCreator = (wid + i) % (nb_workers);
+                    st->workExecutor = wid;
+                    st->stealCounter = workerStateArr[wid].stealCounter;
+                    st->taskID = task->id;
+                    workerStateArr[wid].stealCounter+=1; //updating state of current worker after stealing
+                    
+                    stolenTaskList *stl = (stolenTaskList *)malloc(sizeof(stolenTaskList));
+                    stl->task = st;
+                    stl->next = workerStateArr[wid].stl;
+                    workerStateArr[wid].stl = stl;
                     break;
                 }
                 i++;
             }
         }
+        else if (!task && replay_enabled)
+        {
+            // tasks will be send by some other worker to our list otherwise we will keep on waiting
+            // while (!task)
+            // while (workerStateArr[wid].stealCounter < workerStateArr[wid].tempCounter && workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id != -1)
+            while (1)
+            {
+                // printf("Task1 not found with current steal counter %d woker %d id %d\n", workerStateArr[wid].stealCounter, wid, workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id);
+                if (workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id != -1)
+                {
+                    // sleep(0.01);
+                    printf("Task1 not found with current steal counter %d woker %d\n", workerStateArr[wid].stealCounter, wid);
+                    task = &workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter];    
+                    break;
+                }
+            }
+            finish_t *current_finish = task->current_finish;
+            workerStateArr[wid].stealCounter+=1;
+            hclib_worker_state* ws = &workers[wid];
+            ws->current_finish = current_finish;
+            task->_fp((void *)task->args);
+            check_out_finish(current_finish);
+            task=NULL;
+            // check_out_finish(task->current_finish);
+            // free(task);
+            continue;
+        }
+
         if (task)
         {
             execute_task(task);
@@ -235,7 +310,7 @@ void *worker_routine(void *args)
     while (not_done)
     {
         task_t *task = dequePop(workers[wid].deque);
-        if (!task)
+        if (!task && tracing_enabled && !replay_enabled)
         {
             // try to steal
             int i = 1;
@@ -244,15 +319,193 @@ void *worker_routine(void *args)
                 task = dequeSteal(workers[(wid + i) % (nb_workers)].deque);
                 if (task)
                 {
+                    printf("Worker %d stole task %d from worker %d\n", wid, task->id, (wid + i) % (nb_workers));
                     workers[wid].total_steals++;
+                    // now we have a stealed task, we need to add this to the list of stolen tasks
+                    stolenTask *st = (stolenTask *)malloc(sizeof(stolenTask));
+                    st->workCreator = (wid + i) % (nb_workers);
+                    st->workExecutor = wid;
+                    st->stealCounter = workerStateArr[wid].stealCounter;
+                    st->taskID = task->id;
+                    workerStateArr[wid].stealCounter++; //updating state of current worker after stealing
+
+                    stolenTaskList *stl = (stolenTaskList *)malloc(sizeof(stolenTaskList));
+                    stl->task = st;
+                    stl->next = workerStateArr[wid].stl;
+                    workerStateArr[wid].stl = stl;
+
                     break;
                 }
                 i++;
             }
+        }
+        else if (!task && replay_enabled)
+        {
+            // tasks will be send by some other worker to our list otherwise we will keep on waiting
+            // printf("Task not found with current steal counter %d woker %d\n", workerStateArr[wid].stealCounter, wid);
+            // printf("id of the task at current steal counter is %d\n", workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter]->id);
+            // printf("entry\n");
+            while (1)
+            {
+                // sleep(0.01);
+                // printf("Task2 not found with current steal counter %d woker %d id %d\n", workerStateArr[wid].stealCounter, wid, workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id);
+                if (workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id != -1)
+                {
+                    printf("Task2 not found with current steal counter %d woker %d\n", workerStateArr[wid].stealCounter, wid);
+                    task = &workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter];    
+                    break;
+                }
+            }
+            workerStateArr[wid].stealCounter+=1;
+            finish_t *current_finish = task->current_finish;
+            workerStateArr[wid].stealCounter+=1;
+            hclib_worker_state* ws = &workers[wid];
+            ws->current_finish = current_finish;
+            task->_fp((void *)task->args);
+            check_out_finish(current_finish);
+            task=NULL;
+            // hclib_worker_state* ws = &workers[wid];
+            // ws->current_finish = task->current_finish;
+            // task->_fp((void *)task->args);
+            // task=NULL;
+            // check_out_finish(task->current_finish);
+            // free(task);
+            // free(task);
+            continue;
         }
         if (task){
             execute_task(task);
         }
     }
     return NULL;
+}
+
+
+void hclib_start_tracing()
+{
+    printf("Tracing enabled\n");
+    for (int i = 0; i < nb_workers; i++)
+    {
+        printf("Worker %d's stolen task list\n", i);
+        stolenTaskList *stlCurr = workerStateArr[i].stl;
+        while (stlCurr != NULL)
+        {
+            printf("Task %d was stolen by worker %d from worker %d\n", stlCurr->task->taskID, stlCurr->task->workExecutor, stlCurr->task->workCreator);
+            stlCurr = stlCurr->next;
+        }
+    }
+    for (int i = 0; i < nb_workers; i++)
+    {
+        workerStateArr[i].asynCounter = i * (UINT16_MAX / nb_workers);
+        workerStateArr[i].stealCounter = 0;
+    }
+    tracing_enabled = 1;
+}
+void hclib_stop_tracing()
+{
+    if (replay_enabled)
+    {
+        // clear out stolenTasks list
+        for (int i = 0; i < nb_workers; i++)
+        {
+            workerStateArr[i].tempCounter = workerStateArr[i].stealCounter;
+            workerStateArr[i].stealCounter = 0;
+            for (int j = 0; j < workerStateArr[i].tempCounter; j++)
+            {
+                workerStateArr[i].stolenTasks[j] = (task_t){.id = -1};
+            }
+        }
+    }
+    if (!replay_enabled)
+    {
+        // First print entire details of stolen task list of each worker
+        for (int i = 0; i < nb_workers; i++)
+        {
+            printf("Worker %d's stolen task list\n", i);
+            stolenTaskList *stlCurr = workerStateArr[i].stl;
+            while (stlCurr != NULL)
+            {
+                printf("Task %d was stolen by worker %d from worker %d\n", stlCurr->task->taskID, stlCurr->task->workExecutor, stlCurr->task->workCreator);
+                stlCurr = stlCurr->next;
+            }
+        }
+        // aggregate all the stolen tasks for each worker
+        // look for the tasks with creator as wid and put them in the stolen list of wid worker while deleting from j
+        for (int i = 0; i < nb_workers; i++)
+        {
+            int wid = i;
+            for (int j=0 ; j < nb_workers; j++)
+            {
+                if (i != j) // do not look into your own list
+                {
+                    stolenTaskList *stlCurr = workerStateArr[j].stl;
+                    stolenTaskList *stlPrev = NULL;
+                    stolenTaskList *tmp;
+                    while (stlCurr != NULL)
+                    {
+                        if (stlCurr->task->workCreator == wid)
+                        {
+                            tmp = stlCurr;
+                            // add this task to the worker's list
+                            stlCurr = stlCurr->next;
+                            if (stlPrev != NULL)
+                            {
+                                stlPrev->next = stlCurr;
+                            }
+                            else
+                            {
+                                workerStateArr[j].stl = stlCurr;
+                            }
+                            tmp->next = workerStateArr[wid].stl;
+                            workerStateArr[wid].stl = tmp;
+                            tmp = stlCurr;
+                        }
+                        else
+                        {
+                            stlPrev = stlCurr;
+                            stlCurr = stlCurr->next;
+                        }
+                    }
+                    
+            }
+        }
+    }
+
+        // // Now sort the stolen list of each worker based on the task id
+        // for (int i = 0; i < nb_workers; i++)
+        // {
+        //     stolenTaskList *stlCurr = workerStateArr[i].stl;
+        //     stolenTaskList *stlPrev = NULL;
+        //     while (stlCurr != NULL)
+        //     {
+        //         stolenTaskList *stlNext = stlCurr->next;
+        //         while (stlNext != NULL)
+        //         {
+        //             if (stlCurr->task->taskID > stlNext->task->taskID)
+        //             {
+        //                 stlPrev->next = stlNext;
+        //                 stlCurr->next = stlNext->next;
+        //                 stlNext->next = stlCurr;
+        //             }
+        //             stlNext = stlNext->next;
+        //         }
+        //         stlCurr = stlCurr->next;
+        //     }
+        // }
+
+        // Now creating arrays for each worker to store the stolen tasks
+        for (int i = 0; i < nb_workers; i++)
+        {
+            workerStateArr[i].tempCounter = workerStateArr[i].stealCounter;
+            workerStateArr[i].stolenTasks = (task_t *)malloc(sizeof(task_t) * workerStateArr[i].stealCounter);
+            for (int j = 0; j < workerStateArr[i].stealCounter; j++)
+            {
+                // workerStateArr[i].stolenTasks[j]= malloc(sizeof(task_t));
+                workerStateArr[i].stolenTasks[j] = (task_t) { .id = -1 };
+            }
+            workerStateArr[i].stealCounter = 0;
+        } 
+        replay_enabled = 1;
+
+    }
 }

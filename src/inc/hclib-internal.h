@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "hclib.h"
 #include "hclib-deque.h"
@@ -37,3 +38,23 @@ typedef struct hclib_worker_state {
     long total_push;
     long total_steals;
 } hclib_worker_state;
+
+typedef struct stolenTask {
+    int workCreator;
+    int workExecutor;
+    int stealCounter;
+    int taskID;
+} stolenTask;
+
+typedef struct stolenTaskList {
+    stolenTask *task;
+    struct stolenTaskList *next;
+} stolenTaskList;
+
+typedef struct workerState {
+    int asynCounter;
+    int stealCounter;
+    stolenTaskList *stl;
+    task_t *stolenTasks;
+    int tempCounter;
+} workerState;
