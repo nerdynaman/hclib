@@ -50,10 +50,12 @@ int main (int argc, char ** argv) {
     hclib::kernel([&]() {
         for (int i = 0; i < 4; i++)
         {
-            hclib::start_tracing();
-            res = fib(n);
-            printf("Fib(%d) = %d\n",n,res);
-            hclib::stop_tracing();
+            // hclib::kernel([&](){
+                hclib::start_tracing();
+                res = fib(n);
+                printf("Fib(%d) = %d\n",n,res);
+                hclib::stop_tracing();
+            // })
         }
     });
     printf("Fib(%d) = %d\n",n,res);

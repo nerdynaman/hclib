@@ -20,6 +20,7 @@
 #include <sys/time.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #include "hclib.h"
 #include "hclib-deque.h"
