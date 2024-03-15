@@ -107,7 +107,7 @@ void hclib_init(int argc, char **argv)
     printf("---------HCLIB_RUNTIME_INFO-----------\n");
     printf(">>> HCLIB_WORKERS\t= %s\n", getenv("HCLIB_WORKERS"));
     printf("----------------------------------------\n");
-    nb_workers = (getenv("HCLIB_WORKERS") != NULL) ? atoi(getenv("HCLIB_WORKERS")) : 2;
+    nb_workers = (getenv("HCLIB_WORKERS") != NULL) ? atoi(getenv("HCLIB_WORKERS")) : 4;
     setup();
     benchmark_start_time_stats = mysecond();
 }
@@ -216,7 +216,7 @@ void slave_worker_finishHelper_routine(finish_t *finish)
             // while (workerStateArr[wid].stealCounter < workerStateArr[wid].tempCounter && workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id != -1)
             while (finish->counter > 0)
             {
-                sleep(0.001);
+                sleep(0.0001);
                 // printf("Task1 not found with current steal counter %d woker %d id %d\n", workerStateArr[wid].stealCounter, wid, workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id);
                 if (workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id != -1)
                 {
@@ -352,7 +352,7 @@ void *worker_routine(void *args)
             // printf("entry\n");
             while (not_done)
             {
-                sleep(0.001);
+                sleep(0.0001);
                 // printf("Task2 not found with current steal counter %d woker %d id %d\n", workerStateArr[wid].stealCounter, wid, workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id);
                 if (workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id != -1)
                 {
@@ -470,27 +470,26 @@ void hclib_stop_tracing()
         }
     }
 
-        // // Now sort the stolen list of each worker based on the task id
-        // for (int i = 0; i < nb_workers; i++)
-        // {
-        //     stolenTaskList *stlCurr = workerStateArr[i].stl;
-        //     stolenTaskList *stlPrev = NULL;
-        //     while (stlCurr != NULL)
-        //     {
-        //         stolenTaskList *stlNext = stlCurr->next;
-        //         while (stlNext != NULL)
-        //         {
-        //             if (stlCurr->task->taskID > stlNext->task->taskID)
-        //             {
-        //                 stlPrev->next = stlNext;
-        //                 stlCurr->next = stlNext->next;
-        //                 stlNext->next = stlCurr;
-        //             }
-        //             stlNext = stlNext->next;
-        //         }
-        //         stlCurr = stlCurr->next;
-        //     }
-        // }
+        // Now sort the stolen list of each worker based on the task id
+        for (int i = 0; i < nb_workers; i++)
+        {
+            stolenTaskList *stlCurr = workerStateArr[i].stl;
+            if (stlCurr == NULL)
+                continue;
+            stolenTaskList *stlNext = stlCurr->next;
+            while (stlNext != NULL)
+            {
+                if (stlCurr->task->taskID > stlNext->task->taskID)
+                {
+                    // swap the tasks
+                    stolenTask *tmp = stlCurr->task;
+                    stlCurr->task = stlNext->task;
+                    stlNext->task = tmp;
+                }
+                stlCurr = stlNext;
+                stlNext = stlNext->next;
+            }
+        }
 
         // Now creating arrays for each worker to store the stolen tasks
         for (int i = 0; i < nb_workers; i++)

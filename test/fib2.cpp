@@ -1,7 +1,7 @@
 #include <iostream>
 #include "hclib.hpp"
 
-const int SIZE = 10;
+const int SIZE = 100000;
 const int THRESHOLD = 2;
 double A[SIZE + 2], A_shadow[SIZE + 2];
 
