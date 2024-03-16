@@ -48,7 +48,7 @@ int main (int argc, char ** argv) {
 
     printf("Starting Fib(%d)..\n",n);
     hclib::kernel([&]() {
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 16; i++)
         {
             // hclib::kernel([&](){
                 hclib::start_tracing();

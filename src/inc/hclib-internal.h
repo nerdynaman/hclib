@@ -56,6 +56,8 @@ typedef struct workerState {
     int asynCounter;
     int stealCounter;
     stolenTaskList *stl;
+    stolenTaskList *stlHead;
+    int* stolenTasksAvailableArr;
     task_t *stolenTasks;
     int tempCounter;
 } workerState;

@@ -1,8 +1,8 @@
 #include <iostream>
 #include "hclib.hpp"
 
-const int SIZE = 25165824;
-const int THRESHOLD = 512;
+const int SIZE = 100000;
+const int THRESHOLD = 2;
 double A[SIZE + 2], A_shadow[SIZE + 2];
 
 void recurse(int low, int high) {
@@ -23,10 +23,10 @@ void recurse(int low, int high) {
 
 void compute(int MAX_ITERS) {
     for (int i = 0; i < MAX_ITERS; i++) {
-        hclib::start_tracing();
+        // hclib::start_tracing();
         recurse(1, SIZE + 1);
         std::swap(A,A_shadow);
-        hclib::stop_tracing();
+        // hclib::stop_tracing();
     }
 }
 
@@ -36,20 +36,20 @@ int main(int argc, char ** argv) {
         A[i] = i;
         A_shadow[i] = 0; 
     }
-    // std::cout << "ARRAY IS:";
-    // for (int i = 0; i < SIZE + 2; ++i) {
-    //     std::cout << A[i] << " ";
-    // }
-    // std::cout << std::endl;
+    std::cout << "ARRAY IS:";
+    for (int i = 0; i < SIZE + 2; ++i) {
+        std::cout << A[i] << " ";
+    }
+    std::cout << std::endl;
 
     hclib::kernel([&]() {
-      compute(64);
+      compute(4);
     });
-    // std::cout << "ANS ARRAY IS:";
-    // for (int i = 0; i < SIZE + 2; ++i) {
-    //     std::cout << A[i] << " ";
-    // }
-    // std::cout << std::endl;
+    std::cout << "ANS ARRAY IS:";
+    for (int i = 0; i < SIZE + 2; ++i) {
+        std::cout << A[i] << " ";
+    }
+    std::cout << std::endl;
     hclib::finalize();
     return 0;
 }
