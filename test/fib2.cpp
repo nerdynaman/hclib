@@ -3,7 +3,9 @@
 
 const int SIZE = 25165824;
 const int THRESHOLD = 512;
-double A[SIZE + 2], A_shadow[SIZE + 2];
+// double A[SIZE + 2], A_shadow[SIZE + 2];
+double *A;
+double *A_shadow ;
 
 void recurse(int low, int high) {
     if ((high - low) > THRESHOLD) {
@@ -32,10 +34,14 @@ void compute(int MAX_ITERS) {
 
 int main(int argc, char ** argv) {
     hclib::init(argc, argv);
-    for (int i = 0; i < SIZE + 2; ++i) {
-        A[i] = i;
-        A_shadow[i] = 0; 
-    }
+    // for (int i = 0; i < SIZE + 2; ++i) {
+    //     A[i] = i;
+    //     A_shadow[i] = 0; 
+    // }
+    A = new double[SIZE + 2];
+    A_shadow = new double[SIZE + 2];
+    A[SIZE+1] = 1.0;
+    A_shadow[SIZE+1] = 1.0;
     // std::cout << "ARRAY IS:";
     // for (int i = 0; i < SIZE + 2; ++i) {
     //     std::cout << A[i] << " ";

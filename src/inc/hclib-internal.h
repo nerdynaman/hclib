@@ -58,6 +58,6 @@ typedef struct workerState {
     stolenTaskList *stl;
     stolenTaskList *stlHead;
     int* stolenTasksAvailableArr;
-    task_t *stolenTasks;
+    task_t **stolenTasks;
     int tempCounter;
 } workerState;

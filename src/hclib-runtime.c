@@ -122,7 +122,7 @@ void execute_task(task_t *task)
     task->_fp((void *)task->args);
     check_out_finish(current_finish);
     // printf("Task %d executed by worker execexec%d\n", task->id, wid);
-    // free(task);
+    free(task);
 }
 
 void spawn(task_t *task)
@@ -177,7 +177,7 @@ void hclib_async(generic_frame_ptr fct_ptr, void *arg)
                 // {
                 //     spawn(task);
                 // }
-                workerStateArr[stlcurr->task->workExecutor].stolenTasks[stlcurr->task->stealCounter] = *task;
+                workerStateArr[stlcurr->task->workExecutor].stolenTasks[stlcurr->task->stealCounter] = task;
                 workerStateArr[stlcurr->task->workExecutor].stolenTasksAvailableArr[stlcurr->task->stealCounter] = 1;
                 return;
             }
@@ -245,19 +245,20 @@ void slave_worker_finishHelper_routine(finish_t *finish)
             {
                 // if (workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id != -1)
                 if (hc_cas(&workerStateArr[wid].stolenTasksAvailableArr[workerStateArr[wid].stealCounter], 1, 0) == 1)
+                // if (workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter]!=NULL)
                 {
                     // sleep(0.01);
                     // printf("Task1 found with current steal counter %d worker %d\n", workerStateArr[wid].stealCounter, wid);
-                    task = &workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter];    
+                    task = workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter];    
+                    // workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter] = NULL;
                     workerStateArr[wid].stealCounter+=1;
                     break;
                 }
                 // sleep(0.00001);
-                // printf("Task1 not found with current steal counter %d woker %d id %d\n", workerStateArr[wid].stealCounter, wid, workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id);
             }
         }
 
-        if (task && task->id != -1)
+        if (task)
         {
             execute_task(task);
         }
@@ -384,9 +385,11 @@ void *worker_routine(void *args)
             {
                 // if (workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id != -1)
                 if (hc_cas(&workerStateArr[wid].stolenTasksAvailableArr[workerStateArr[wid].stealCounter], 1, 0) == 1)
+                // if (workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter])
                 {
                     // printf("Task2 found with current steal counter %d worker %d\n", workerStateArr[wid].stealCounter, wid);
-                    task = &workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter];    
+                    task = workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter];    
+                    // workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter] = NULL;
                     workerStateArr[wid].stealCounter+=1;
                     break;
                 }
@@ -394,7 +397,7 @@ void *worker_routine(void *args)
                 // printf("Task2 not found with current steal counter %d woker %d id %d\n", workerStateArr[wid].stealCounter, wid, workerStateArr[wid].stolenTasks[workerStateArr[wid].stealCounter].id);
             }
         }
-        if (task != NULL && task->id != -1){
+        if (task){
             execute_task(task);
         }
     }
@@ -485,9 +488,9 @@ void hclib_stop_tracing()
             workerStateArr[i].stlHead = workerStateArr[i].stl;
             for (int j = 0; j < workerStateArr[i].tempCounter+1; j++)
             {
-                workerStateArr[i].stolenTasks[j].id = -1;
-                // workerStateArr[i].stolenTasksAvailableArr[j] = 0;
-                // workerStateArr[i].stolenTaskCounter[j] = 0;
+            //     workerStateArr[i].stolenTasks[j] = NULL;
+                workerStateArr[i].stolenTasksAvailableArr[j] = 0;
+            //     // workerStateArr[i].stolenTaskCounter[j] = 0;
             }
         }
     }
@@ -591,16 +594,16 @@ void hclib_stop_tracing()
         for (int i = 0; i < nb_workers; i++)
         {
             workerStateArr[i].tempCounter = workerStateArr[i].stealCounter;
-            workerStateArr[i].stolenTasks = (task_t *)malloc(sizeof(task_t) * (workerStateArr[i].stealCounter+1));
+            workerStateArr[i].stolenTasks = (task_t **)malloc(sizeof(task_t*) * (workerStateArr[i].stealCounter+1));
             workerStateArr[i].stolenTasksAvailableArr = (int *)malloc(sizeof(int) * (workerStateArr[i].stealCounter+1));
             for (int j = 0; j < workerStateArr[i].stealCounter+1; j++)
             {
                 // workerStateArr[i].stolenTasks[j]= malloc(sizeof(task_t));
-                task_t *task = malloc(sizeof(*task));
-                *task = (task_t){
-                    .id = -1,
-                };
-                workerStateArr[i].stolenTasks[j] = *task;
+                // task_t *task = malloc(sizeof(*task));
+                // *task = (task_t){
+                //     .id = -1,
+                // };
+                workerStateArr[i].stolenTasks[j] = NULL;
                 workerStateArr[i].stolenTasksAvailableArr[j] = 0;
             }
             workerStateArr[i].stealCounter = 0;
