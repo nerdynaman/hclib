@@ -20,6 +20,7 @@ pthread_key_t selfKey;
 pthread_once_t selfKeyInitialized = PTHREAD_ONCE_INIT;
 
 hclib_worker_state *workers;
+volatile int sync_flag=1;
 int *worker_id;
 int nb_workers;
 int not_done;
@@ -305,6 +306,8 @@ void *worker_routine(void *args)
     set_current_worker(wid);
     while (not_done)
     {
+        //sync_flag to wait
+        while(sync_flag==0);
         task_t *task = dequePop(workers[wid].deque);
         if (!task && !replay_enabled)
         {
@@ -428,6 +431,7 @@ void hclib_start_tracing()
     //         stlCurr = stlCurr->next;
     //     }
     // }
+    sync_flag=1;
     for (int i = 0; i < nb_workers; i++)
     {
         workerStateArr[i].asynCounter = i * (UINT16_MAX / nb_workers);
@@ -441,6 +445,7 @@ void hclib_start_tracing()
 }
 void hclib_stop_tracing()
 {
+    sync_flag=0;
     if (replay_enabled)
     {
         // clear out stolenTasks list

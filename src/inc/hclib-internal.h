@@ -35,7 +35,7 @@ typedef struct hclib_worker_state {
     pthread_t tid; // the pthread associated
     struct finish_t* current_finish;
     deque_t * deque;
-    int id; // The id, identify a worker
+    unsigned int id; // The id, identify a worker
     long total_push;
     long total_steals;
 } hclib_worker_state;
@@ -44,7 +44,7 @@ typedef struct stolenTask {
     int workCreator;
     int workExecutor;
     int stealCounter;
-    int taskID;
+    unsigned int taskID;
 } stolenTask;
 
 typedef struct stolenTaskList {
@@ -53,8 +53,8 @@ typedef struct stolenTaskList {
 } stolenTaskList;
 
 typedef struct workerState {
-    int asynCounter;
-    int stealCounter;
+    unsigned int asynCounter;
+    unsigned int stealCounter;
     stolenTaskList *stl;
     stolenTaskList *stlHead;
     int* stolenTasksAvailableArr;
