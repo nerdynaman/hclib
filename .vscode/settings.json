@@ -1,0 +1,12 @@
+{
+	"files.associations": {
+		"@main": "c",
+		"makefile": "code-text-binary",
+		"hclib-internal.h": "c",
+		"stdio.h": "c",
+		"pthread.h": "c",
+		"stdlib.h": "c",
+		"time.h": "c",
+		"stddef.h": "c"
+	}
+}
