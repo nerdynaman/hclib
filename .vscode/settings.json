@@ -3,6 +3,11 @@
 		"@main": "c",
 		"makefile": "code-text-binary",
 		"hclib-internal.h": "c",
+		"hclib-deque.h": "c",
+		"hclib-atomics.h": "c",
+		"stddef.h": "c",
+		"stdlib.h": "c"
+=======
 		"stdio.h": "c",
 		"pthread.h": "c",
 		"stdlib.h": "c",
