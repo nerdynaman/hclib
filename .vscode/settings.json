@@ -2,6 +2,7 @@
 	"files.associations": {
 		"@main": "c",
 		"makefile": "code-text-binary",
+
 		"hclib-internal.h": "c",
 		"hclib-deque.h": "c",
 		"hclib-atomics.h": "c",
