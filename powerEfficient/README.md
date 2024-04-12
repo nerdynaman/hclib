@@ -54,3 +54,6 @@ IMPORTANT NOTES
 : heat: 60ms
 : delay: 400ms
 : performance: 53.2516	0.0000000119/ 64.7658	0.0000000144
+
+FINAL:
+Run woth threads > 4 to see the energy efficiency

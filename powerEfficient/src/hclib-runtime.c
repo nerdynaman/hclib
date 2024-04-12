@@ -44,7 +44,7 @@ double mysecond() {
 
 void configure_DOP(double JPI_prev, double JPI_curr, int *threadsSleptArr)
 {
-    printf("JPI_prev: %.15f, JPI_curr: %.15f\n", JPI_prev, JPI_curr);
+
     // round JPI_curr and JPI_prev to 10 decimal places
     // JPI_prev = round(JPI_prev * 10000000000) / 10000000000;
     // JPI_curr = round(JPI_curr * 10000000000) / 10000000000;
@@ -53,7 +53,7 @@ void configure_DOP(double JPI_prev, double JPI_curr, int *threadsSleptArr)
         // sleep daemonN number of threads
         // find the threads in array iteratively to find the threads that are not slept
         // make sure one thread is always awake
-        printf("less energy\n");
+        // printf("less energy\n");
         int localDaemonN = daemonN;
         int threadsAwake = 0;
         for (int i = 0; i < nb_workers; i++)
@@ -86,7 +86,7 @@ void configure_DOP(double JPI_prev, double JPI_curr, int *threadsSleptArr)
     }
     else if (JPI_curr > JPI_prev)
     {
-        printf("more energy\n");
+        // printf("more energy\n");
         int localDaemonN = daemonN;
         // look from end of array to find the threads that are slept
         for (int i = nb_workers - 1; i > -1; i--)
@@ -117,17 +117,18 @@ void daemon_profiler()
     {
         threadsSleptArr[i] = -1;
     }
-    sleep(0.07);                     // warmup duration
-    // double JPI_curr = 0;            // supported in hclib-light
-    likwid_read();                  // supported in hclib-light
+    sleep(1);                     // warmup duration
+    double JPI_curr = 0;            // supported in hclib-light
     while (shutdown == 0)
     {
-        double JPI_curr = likwid_JPI(); // supported in hclib-light
+        likwid_read();                  // supported in hclib-light
+        printf("JPI_prev: %.15f, JPI_curr: %.15f\n", JPI_prev, JPI_curr);
+        JPI_curr = likwid_JPI(); // supported in hclib-light
         dopc++;
         configure_DOP(JPI_prev, JPI_curr, threadsSleptArr);
         JPI_prev = JPI_curr;
-        sleep(0.4);
-        likwid_read();                  // supported in hclib-light
+        sleep(0.6);
+
     }
 }
 
@@ -313,34 +314,29 @@ void hclib_finalize() {
 void hclib_kernel(generic_frame_ptr fct_ptr, void * arg) {
     likwid_start();
     likwid_read();
-    double startEnergy = likwid_energy();
     // start daemon profiler thread
     pthread_t profiler;
     pthread_create(&profiler, NULL, (void *)daemon_profiler, NULL);
+    double startEnergy = likwid_energy();
 
     double start = mysecond();
-    // printf("Kernel Start Time: %.4f\n", start);
+    printf("function start\n");
     fct_ptr(arg);
-    // printf("Kernel End Time:\n");
-    shutdown = 1;
-    pthread_join(profiler, NULL);
-    user_specified_timer = (mysecond() - start)*1000;
     likwid_read();
     kernel_energy = likwid_energy() - startEnergy;
     likwid_jpi = likwid_JPI();
-    likwid_stop();
-
+    shutdown = 1;
+    pthread_join(profiler, NULL);
+    user_specified_timer = (mysecond() - start)*1000;
     for (int i = 0; i < nb_workers; i++)
     {
         if (sleepCounterArr[i] == 1)
         {
             pthread_cond_signal(&condArr[i]);
-            // pthread_mutex_unlock(&mutexArr[i]);
-            // printf("Signaling thread %d\n", i);
+            sleepCounterArr[i] = -1;
         }
-        sleepCounterArr[i] = -1;
     }
-    // printf("Kernel Energy: %.4f\n", kernel_energy);
+    likwid_stop();
 }
 
 void hclib_finish(generic_frame_ptr fct_ptr, void * arg) {
