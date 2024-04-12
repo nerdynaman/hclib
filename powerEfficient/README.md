@@ -48,3 +48,9 @@ Dependencies
 * automake
 * gcc >= 4.8.4, or clang >= 3.5
   (must support -std=c11 and -std=c++11)
+
+
+IMPORTANT NOTES
+: heat: 60ms
+: delay: 400ms
+: performance: 53.2516	0.0000000119/ 64.7658	0.0000000144

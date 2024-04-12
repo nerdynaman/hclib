@@ -15,7 +15,7 @@
  */
 
 #include "hclib-internal.h"
-
+#include <math.h>
 #include <unistd.h>
 #define daemonN 1
 pthread_key_t selfKey;
@@ -32,6 +32,7 @@ int shutdown = 0;
 int *sleepCounterArr;
 pthread_cond_t *condArr;
 pthread_mutex_t *mutexArr;
+int sleeps, awakes, dopc= 0;
 
 double mysecond() {
     struct timeval tv;
@@ -43,41 +44,64 @@ double mysecond() {
 
 void configure_DOP(double JPI_prev, double JPI_curr, int *threadsSleptArr)
 {
-    double delta_JPI = JPI_curr - JPI_prev;
-    if (delta_JPI > 0.0)
+    printf("JPI_prev: %.15f, JPI_curr: %.15f\n", JPI_prev, JPI_curr);
+    // round JPI_curr and JPI_prev to 10 decimal places
+    // JPI_prev = round(JPI_prev * 10000000000) / 10000000000;
+    // JPI_curr = round(JPI_curr * 10000000000) / 10000000000;
+    if (JPI_curr < JPI_prev)
     {
         // sleep daemonN number of threads
-        for (int i = 0; i < daemonN; i++)
+        // find the threads in array iteratively to find the threads that are not slept
+        // make sure one thread is always awake
+        printf("less energy\n");
+        int localDaemonN = daemonN;
+        int threadsAwake = 0;
+        for (int i = 0; i < nb_workers; i++)
         {
-            int randomIndex = (rand() % (nb_workers-1)) + 1;
-            if (threadsSleptArr[randomIndex] == -1)
+            if (threadsSleptArr[i] == -1)
             {
-                // pthread_mutex_lock(&mutexArr[randomIndex]);
-                sleepCounterArr[randomIndex] = 1;
-                threadsSleptArr[randomIndex] = 1;
+                threadsAwake++;
             }
-            else
+        }
+        for (int i = 0; i < nb_workers; i++)
+        {
+            if (localDaemonN == 0 && threadsAwake > 0)
             {
-                i--;
+                break;
+            }
+            if (threadsSleptArr[i] == -1 && localDaemonN > 0 && threadsAwake > 0)
+            {
+                // pthread_mutex_lock(&mutexArr[i]);
+                sleepCounterArr[i] = 1;
+                threadsSleptArr[i] = 1;
+                localDaemonN--;
+                threadsAwake--;
+                sleeps++;
+            }
+            else if (threadsSleptArr[i] == -1)
+            {
+                threadsAwake++;
             }
         }
     }
-    else if (delta_JPI < 0.0)
+    else if (JPI_curr > JPI_prev)
     {
-        // wake up daemonN number of threads
-        for (int i = 0; i < daemonN; i++)
+        printf("more energy\n");
+        int localDaemonN = daemonN;
+        // look from end of array to find the threads that are slept
+        for (int i = nb_workers - 1; i > -1; i--)
         {
-            int randomIndex = (rand() % (nb_workers-1)) + 1;
-            if (threadsSleptArr[randomIndex] == 1)
+            if (localDaemonN == 0)
             {
-                sleepCounterArr[randomIndex] = 0;
-                threadsSleptArr[randomIndex] = -1;
-                pthread_cond_signal(&condArr[randomIndex]);
-                // pthread_mutex_unlock(&mutexArr[randomIndex]);
+                break;
             }
-            else
+            if (threadsSleptArr[i] == 1)
             {
-                i--;
+                sleepCounterArr[i] = -1;
+                threadsSleptArr[i] = -1;
+                pthread_cond_signal(&condArr[i]);
+                localDaemonN--;
+                awakes++;
             }
         }
     }
@@ -86,21 +110,24 @@ void configure_DOP(double JPI_prev, double JPI_curr, int *threadsSleptArr)
 
 void daemon_profiler()
 {                                  // a dedicated pthread (not part of HClib work-stealing)
-    const int fixed_interval = 20; // some value that you find experimentally
-    double JPI_prev = 0;           // JPI is Joules per Instructions Retired
+    // const int fixed_interval = 20; // some value that you find experimentally
+    double JPI_prev = 1.0;           // JPI is Joules per Instructions Retired
     int *threadsSleptArr = (int *)malloc(sizeof(int) * nb_workers);
     for (int i = 0; i < nb_workers; i++)
     {
         threadsSleptArr[i] = -1;
     }
-    sleep(0.02);                     // warmup duration
-    while (shutdown != 1)
+    sleep(0.07);                     // warmup duration
+    // double JPI_curr = 0;            // supported in hclib-light
+    likwid_read();                  // supported in hclib-light
+    while (shutdown == 0)
     {
-        likwid_read();                  // supported in hclib-light
         double JPI_curr = likwid_JPI(); // supported in hclib-light
+        dopc++;
         configure_DOP(JPI_prev, JPI_curr, threadsSleptArr);
         JPI_prev = JPI_curr;
-        sleep(0.01);
+        sleep(0.4);
+        likwid_read();                  // supported in hclib-light
     }
 }
 
@@ -138,7 +165,7 @@ void setup() {
     sleepCounterArr = (int *) malloc(sizeof(int) * nb_workers);
     for (int i = 0; i < nb_workers; i++)
     {
-        sleepCounterArr[i] = 0;
+        sleepCounterArr[i] = -1;
     }
     condArr = (pthread_cond_t *) malloc(sizeof(pthread_cond_t) * nb_workers);
     for (int i = 0; i < nb_workers; i++)
@@ -212,9 +239,11 @@ void hclib_async(generic_frame_ptr fct_ptr, void * arg) {
 void slave_worker_finishHelper_routine(finish_t* finish) {
    int wid = hclib_current_worker();
    while(finish->counter > 0) {
-        if (sleepCounterArr[wid] > 0)
+        if (sleepCounterArr[wid] == 1)
         {
             pthread_cond_wait(&condArr[wid], &mutexArr[wid]);
+            // printf("Waking up thread %d\n", wid);
+            // sleepCounterArr[wid] = -1;
         }
        task_t* task = dequePop(workers[wid].deque);
        if (!task) {
@@ -274,6 +303,9 @@ void hclib_finalize() {
     printf("time.kernel\ttotalAsync\ttotalSteals\tEnergy(Joules)\tnetJPI\n");
     printf("%.3f\t%d\t%d\t%.4f\t%.10f\n",user_specified_timer,tpush,tsteals,kernel_energy,likwid_jpi);
     printf("=============================================================================\n");
+    printf("Total Sleeps: %d\n", sleeps);
+    printf("Total Awakes: %d\n", awakes);
+    printf("Total DOPC: %d\n", dopc);
     printf("===== Total Time in %.f msec =====\n", duration);
     printf("===== Test PASSED in 0.0 msec =====\n");
 }
@@ -281,28 +313,32 @@ void hclib_finalize() {
 void hclib_kernel(generic_frame_ptr fct_ptr, void * arg) {
     likwid_start();
     likwid_read();
+    double startEnergy = likwid_energy();
     // start daemon profiler thread
     pthread_t profiler;
     pthread_create(&profiler, NULL, (void *)daemon_profiler, NULL);
-    double startEnergy = likwid_energy();
+
     double start = mysecond();
+    // printf("Kernel Start Time: %.4f\n", start);
     fct_ptr(arg);
+    // printf("Kernel End Time:\n");
+    shutdown = 1;
+    pthread_join(profiler, NULL);
     user_specified_timer = (mysecond() - start)*1000;
     likwid_read();
     kernel_energy = likwid_energy() - startEnergy;
     likwid_jpi = likwid_JPI();
     likwid_stop();
-    shutdown = 1;
-    pthread_join(profiler, NULL);
+
     for (int i = 0; i < nb_workers; i++)
     {
-        if (sleepCounterArr[i] != 0)
+        if (sleepCounterArr[i] == 1)
         {
             pthread_cond_signal(&condArr[i]);
             // pthread_mutex_unlock(&mutexArr[i]);
             // printf("Signaling thread %d\n", i);
         }
-        sleepCounterArr[i] = 0;
+        sleepCounterArr[i] = -1;
     }
     // printf("Kernel Energy: %.4f\n", kernel_energy);
 }
@@ -318,9 +354,11 @@ void* worker_routine(void * args) {
    set_current_worker(wid);
    while(not_done) {
         // pthread_mutex_lock(&mutexArr[wid]);
-        if (sleepCounterArr[wid] > 0)
+        if (sleepCounterArr[wid] == 1)
         {
             pthread_cond_wait(&condArr[wid], &mutexArr[wid]);
+            // printf("Waking up thread %d\n", wid);
+            // sleepCounterArr[wid] = -1;
         }
         // pthread_mutex_unlock(&mutexArr[wid]);
        task_t* task = dequePop(workers[wid].deque);
