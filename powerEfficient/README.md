@@ -57,3 +57,4 @@ IMPORTANT NOTES
 
 FINAL:
 Run woth threads > 4 to see the energy efficiency
+Best performance with 8 threads for energy and time (1sec warmup and 0.5sec delay)

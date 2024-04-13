@@ -32,7 +32,9 @@ int shutdown = 0;
 int *sleepCounterArr;
 pthread_cond_t *condArr;
 pthread_mutex_t *mutexArr;
+int *threadsSleptArr;
 int sleeps, awakes, dopc= 0;
+int currentActiveThreads = 0;
 
 double mysecond() {
     struct timeval tv;
@@ -42,51 +44,44 @@ double mysecond() {
 
 // One global finish scope
 
-void configure_DOP(double JPI_prev, double JPI_curr, int *threadsSleptArr)
+void configure_DOP(double JPI_prev, double JPI_curr)
 {
-
-    // round JPI_curr and JPI_prev to 10 decimal places
-    // JPI_prev = round(JPI_prev * 10000000000) / 10000000000;
-    // JPI_curr = round(JPI_curr * 10000000000) / 10000000000;
     if (JPI_curr < JPI_prev)
     {
         // sleep daemonN number of threads
         // find the threads in array iteratively to find the threads that are not slept
         // make sure one thread is always awake
-        // printf("less energy\n");
-        int localDaemonN = daemonN;
-        int threadsAwake = 0;
-        for (int i = 0; i < nb_workers; i++)
+        if (currentActiveThreads == 1)
         {
-            if (threadsSleptArr[i] == -1)
-            {
-                threadsAwake++;
-            }
+            return;
         }
+        int localDaemonN = currentActiveThreads/4;
+        // int localDaemonN = 1;
+        localDaemonN = localDaemonN < daemonN ? daemonN : localDaemonN;
         for (int i = 0; i < nb_workers; i++)
         {
-            if (localDaemonN == 0 && threadsAwake > 0)
+            if (localDaemonN == 0 && currentActiveThreads > 1)
             {
                 break;
             }
-            if (threadsSleptArr[i] == -1 && localDaemonN > 0 && threadsAwake > 0)
+            if (threadsSleptArr[i] == -1 && localDaemonN > 0 && currentActiveThreads > 1)
             {
                 // pthread_mutex_lock(&mutexArr[i]);
                 sleepCounterArr[i] = 1;
                 threadsSleptArr[i] = 1;
                 localDaemonN--;
-                threadsAwake--;
+                currentActiveThreads--;
                 sleeps++;
-            }
-            else if (threadsSleptArr[i] == -1)
-            {
-                threadsAwake++;
             }
         }
     }
     else if (JPI_curr > JPI_prev)
     {
         // printf("more energy\n");
+        if (currentActiveThreads == nb_workers)
+        {
+            return;
+        }
         int localDaemonN = daemonN;
         // look from end of array to find the threads that are slept
         for (int i = nb_workers - 1; i > -1; i--)
@@ -102,6 +97,7 @@ void configure_DOP(double JPI_prev, double JPI_curr, int *threadsSleptArr)
                 pthread_cond_signal(&condArr[i]);
                 localDaemonN--;
                 awakes++;
+                currentActiveThreads++;
             }
         }
     }
@@ -112,23 +108,17 @@ void daemon_profiler()
 {                                  // a dedicated pthread (not part of HClib work-stealing)
     // const int fixed_interval = 20; // some value that you find experimentally
     double JPI_prev = 1.0;           // JPI is Joules per Instructions Retired
-    int *threadsSleptArr = (int *)malloc(sizeof(int) * nb_workers);
-    for (int i = 0; i < nb_workers; i++)
-    {
-        threadsSleptArr[i] = -1;
-    }
     sleep(1);                     // warmup duration
     double JPI_curr = 0;            // supported in hclib-light
     while (shutdown == 0)
     {
         likwid_read();                  // supported in hclib-light
-        printf("JPI_prev: %.15f, JPI_curr: %.15f\n", JPI_prev, JPI_curr);
         JPI_curr = likwid_JPI(); // supported in hclib-light
+        // printf("JPI_prev: %.15f, JPI_curr: %.15f\n", JPI_prev, JPI_curr);
         dopc++;
-        configure_DOP(JPI_prev, JPI_curr, threadsSleptArr);
+        configure_DOP(JPI_prev, JPI_curr);
         JPI_prev = JPI_curr;
-        sleep(0.6);
-
+        sleep(0.51);
     }
 }
 
@@ -178,6 +168,11 @@ void setup() {
     {
         pthread_mutex_init(&mutexArr[i], NULL);
     }
+    threadsSleptArr = (int *)malloc(sizeof(int) * nb_workers);
+    for (int i = 0; i < nb_workers; i++)
+    {
+        threadsSleptArr[i] = -1;
+    }
     // Start workers
     for(int i=1;i<nb_workers;i++) {
         pthread_attr_t attr;
@@ -202,6 +197,7 @@ void hclib_init(int argc, char **argv) {
     printf(">>> HCLIB_WORKERS\t= %s\n", getenv("HCLIB_WORKERS"));
     printf("----------------------------------------\n");
     nb_workers = (getenv("HCLIB_WORKERS") != NULL) ? atoi(getenv("HCLIB_WORKERS")) : 1;
+    currentActiveThreads = nb_workers;
     setup();
     benchmark_start_time_stats = mysecond();
     likwid_init();
@@ -295,10 +291,19 @@ void hclib_finalize() {
     int i;
     int tpush=workers[0].total_push, tsteals=workers[0].total_steals;
     for(i=1;i< nb_workers; i++) {
+        if (sleepCounterArr[i] == 1)
+        {
+            pthread_cond_signal(&condArr[i]);
+            sleepCounterArr[i] = -1;
+        }
         pthread_join(workers[i].tid, NULL);
     tpush+=workers[i].total_push;
     tsteals+=workers[i].total_steals;
     }
+    free(sleepCounterArr);
+    free(condArr);
+    free(mutexArr);
+    free(threadsSleptArr);
     double duration = (mysecond() - benchmark_start_time_stats) * 1000;
     printf("============================ Tabulate Statistics ============================\n");
     printf("time.kernel\ttotalAsync\ttotalSteals\tEnergy(Joules)\tnetJPI\n");
@@ -307,35 +312,28 @@ void hclib_finalize() {
     printf("Total Sleeps: %d\n", sleeps);
     printf("Total Awakes: %d\n", awakes);
     printf("Total DOPC: %d\n", dopc);
+    printf("Total active threads: %d\n", currentActiveThreads);
     printf("===== Total Time in %.f msec =====\n", duration);
     printf("===== Test PASSED in 0.0 msec =====\n");
 }
 
 void hclib_kernel(generic_frame_ptr fct_ptr, void * arg) {
     likwid_start();
-    likwid_read();
     // start daemon profiler thread
     pthread_t profiler;
     pthread_create(&profiler, NULL, (void *)daemon_profiler, NULL);
+    likwid_read();
     double startEnergy = likwid_energy();
 
     double start = mysecond();
-    printf("function start\n");
+    printf("function execution started\n");
     fct_ptr(arg);
     likwid_read();
     kernel_energy = likwid_energy() - startEnergy;
     likwid_jpi = likwid_JPI();
+    user_specified_timer = (mysecond() - start)*1000;
     shutdown = 1;
     pthread_join(profiler, NULL);
-    user_specified_timer = (mysecond() - start)*1000;
-    for (int i = 0; i < nb_workers; i++)
-    {
-        if (sleepCounterArr[i] == 1)
-        {
-            pthread_cond_signal(&condArr[i]);
-            sleepCounterArr[i] = -1;
-        }
-    }
     likwid_stop();
 }
 

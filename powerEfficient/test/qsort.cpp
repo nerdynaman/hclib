@@ -1,6 +1,6 @@
 #include "hclib.hpp"
 #include <iostream>
-
+#include <cstdint>
 #define ELEMENT_T uint64_t
 
 int partition(ELEMENT_T* data, int left, int right) {
